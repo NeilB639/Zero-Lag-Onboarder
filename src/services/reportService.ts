@@ -20,8 +20,6 @@ const isMissingRelationError = (
   return (error.message ?? '').toLowerCase().includes('does not exist');
 };
  
-console.log("in==========>");
- 
 export const reportService = {
  
   async getCurrentUser(): Promise<AppUser | null> {

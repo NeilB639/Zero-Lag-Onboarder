@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react';
 import type { AppUser } from '../lib/types';
+import { supabase } from '../lib/supabase';
 import { reportService } from '../services/reportService';
 import { formatDateTime } from '../utils/formatters';
+
+const withTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+  return await Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      window.setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+    }),
+  ]);
+};
 
 export const OverviewPage = () => {
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -12,20 +22,43 @@ export const OverviewPage = () => {
   useEffect(() => {
     let isMounted = true;
    
+    const getSessionFallbackUser = async (): Promise<AppUser | null> => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user?.email) return null;
+
+      return {
+        id: data.user.id,
+        auth_user_id: data.user.id,
+        email: data.user.email,
+        full_name: (data.user.user_metadata?.full_name as string | undefined) ?? null,
+        role: 'user',
+        onboarding_status: 'in_progress',
+        stripe_customer_id: null,
+        created_at: data.user.created_at ?? new Date().toISOString(),
+      };
+    };
+
     const loadUsers = async () => {
       try {
         setLoading(true);
         setError(null);
-   
-        console.log("API CALLING");
-   
-        const data = await reportService.listUsers();
-   
-        console.log(data, "===>data");
-   
+
+        let data: AppUser[] = [];
+        try {
+          data = await withTimeout(reportService.listUsers(), 7000, 'Users request');
+        } catch {
+          // Keep UI responsive if users table request hangs.
+          data = [];
+        }
         if (!isMounted) return;
-   
-        setUsers(data);
+
+        if (data.length > 0) {
+          setUsers(data);
+        } else {
+          const fallbackUser = await withTimeout(getSessionFallbackUser(), 3000, 'Session fallback');
+          if (!isMounted) return;
+          setUsers(fallbackUser ? [fallbackUser] : []);
+        }
       } catch (err) {
         if (!isMounted) return;
    
