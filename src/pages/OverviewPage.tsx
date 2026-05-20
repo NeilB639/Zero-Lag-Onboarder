@@ -1,92 +1,19 @@
-import { useEffect, useState } from 'react';
-import type { AppUser } from '../lib/types';
-import { supabase } from '../lib/supabase';
-import { reportService } from '../services/reportService';
+import { useUsers } from '../hooks/useReports';
+import { useUserStore } from '../store/userStore';
 import { formatDateTime } from '../utils/formatters';
 
-const withTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
-  return await Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      window.setTimeout(() => reject(new Error(`${label} timed out`)), ms);
-    }),
-  ]);
-};
-
 export const OverviewPage = () => {
-  const [users, setUsers] = useState<AppUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const { isAdmin } = useUserStore();
+  const { data: users = [], isLoading, isError, error, refetch, isFetching } = useUsers();
 
-  useEffect(() => {
-    let isMounted = true;
-   
-    const getSessionFallbackUser = async (): Promise<AppUser | null> => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error || !data.user?.email) return null;
-
-      return {
-        id: data.user.id,
-        auth_user_id: data.user.id,
-        email: data.user.email,
-        full_name: (data.user.user_metadata?.full_name as string | undefined) ?? null,
-        role: 'user',
-        onboarding_status: 'in_progress',
-        stripe_customer_id: null,
-        created_at: data.user.created_at ?? new Date().toISOString(),
-      };
-    };
-
-    const loadUsers = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        let data: AppUser[] = [];
-        try {
-          data = await withTimeout(reportService.listUsers(), 7000, 'Users request');
-        } catch {
-          // Keep UI responsive if users table request hangs.
-          data = [];
-        }
-        if (!isMounted) return;
-
-        if (data.length > 0) {
-          setUsers(data);
-        } else {
-          const fallbackUser = await withTimeout(getSessionFallbackUser(), 3000, 'Session fallback');
-          if (!isMounted) return;
-          setUsers(fallbackUser ? [fallbackUser] : []);
-        }
-      } catch (err) {
-        if (!isMounted) return;
-   
-        const message =
-          err instanceof Error
-            ? err.message
-            : 'Unable to load users list.';
-   
-        setError(message);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-   
-    void loadUsers();
-   
-    return () => {
-      isMounted = false;
-    };
-  }, [reloadKey]);
-
-  if (loading) return <p>Loading users...</p>;
-  if (error) {
+  if (isLoading) return <p>Loading users...</p>;
+  if (isError) {
+    const message = error instanceof Error ? error.message : 'Unable to load users list.';
     return (
       <div className="space-y-3">
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p className="text-sm text-red-600 dark:text-red-400">{message}</p>
         <button
-          onClick={() => setReloadKey((prev) => prev + 1)}
+          onClick={() => void refetch()}
           className="rounded bg-brand-600 px-3 py-2 text-sm text-white"
         >
           Retry loading users
@@ -97,9 +24,10 @@ export const OverviewPage = () => {
   if (users.length === 0) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-slate-600 dark:text-slate-300">No users found for current session scope.</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">No users found.</p>
         <button
-          onClick={() => setReloadKey((prev) => prev + 1)}
+          onClick={() => void refetch()}
+          disabled={isFetching}
           className="rounded bg-brand-600 px-3 py-2 text-sm text-white"
         >
           Refresh
@@ -109,6 +37,7 @@ export const OverviewPage = () => {
   }
 
   return (
+    <div className="space-y-3">
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 dark:bg-slate-800">
@@ -132,6 +61,7 @@ export const OverviewPage = () => {
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 };

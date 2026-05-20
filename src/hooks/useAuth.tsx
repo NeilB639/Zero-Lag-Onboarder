@@ -1,9 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import { reportService } from '../services/reportService';
+import { useUiStore } from '../store/uiStore';
 import { useUserStore } from '../store/userStore';
+import { clearClientStorage } from '../utils/storage';
 
 interface AuthContextValue {
   session: Session | null;
@@ -17,6 +21,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const setProfile = useUserStore((state) => state.setProfile);
   const clear = useUserStore((state) => state.clear);
 
@@ -84,11 +89,17 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         if (error) throw error;
       },
       signOut: async () => {
-        await supabase.auth.signOut();
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+
+        clearClientStorage();
         clear();
+        useUiStore.getState().setSearch('');
+        queryClient.clear();
+        toast.success('Signed out successfully');
       },
     }),
-    [clear, loading, session],
+    [clear, loading, queryClient, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

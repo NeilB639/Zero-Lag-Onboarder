@@ -50,29 +50,13 @@ export const reportService = {
   },
  
   async listUsers(): Promise<AppUser[]> {
-    const usersResult = await supabase
-      .from('users')
+    const { data, error } = await supabase
+      .from('profiles')  // or 'users' - whichever your table is
       .select('*')
       .order('created_at', { ascending: false });
-
-    if (!usersResult.error) {
-      return (usersResult.data ?? []) as AppUser[];
-    }
-
-    if (!isMissingRelationError(usersResult.error)) {
-      throw usersResult.error;
-    }
-
-    const userResult = await supabase
-      .from('user')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (userResult.error) {
-      throw userResult.error;
-    }
-
-    return (userResult.data ?? []) as AppUser[];
+  
+    if (error) throw error;
+    return (data ?? []) as AppUser[];
   },
   async listReports(search = ''): Promise<AuditReport[]> {
     let query = supabase.from('audit_reports').select('*').order('created_at', { ascending: false });
